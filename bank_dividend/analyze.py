@@ -9,33 +9,6 @@ OUT=ROOT/'results'
 def rows(name):
     with (OUT/name).open(encoding='utf-8-sig',newline='') as f: return list(csv.DictReader(f))
 
-def curve(period):
-    active=rows(f'{period}_2%_每日资产.csv'); baseline=rows(f'{period}_不波段_每日资产.csv')
-    width,height=1100,490; l,r,t,b=90,30,65,65; pw=width-l-r; ph=height-t-b
-    vals=[float(x['总资产'])/10000 for a in (active,baseline) for x in a]
-    low=0; high=max(vals)*1.09; start=dt.date.fromisoformat(active[0]['日期']); end=dt.date.fromisoformat(active[-1]['日期'])
-    def x(d): return l+(dt.date.fromisoformat(d)-start).days/(end-start).days*pw
-    def y(v): return t+ph-(v-low)/(high-low)*ph
-    svg=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
-         '<rect width="100%" height="100%" fill="#ffffff"/>',
-         f'<text x="{l}" y="32" font-family="Microsoft YaHei,Arial" font-size="23" font-weight="bold" fill="#172b4d">{period}账户资产曲线（万元）</text>',
-         '<text x="90" y="54" font-family="Microsoft YaHei,Arial" font-size="13" fill="#6b778c">收盘价信号与收盘价成交，含分红再投入；理想化假设</text>']
-    for i in range(6):
-        val=high*i/5; yy=y(val)
-        svg += [f'<line x1="{l}" y1="{yy:.2f}" x2="{width-r}" y2="{yy:.2f}" stroke="#e6eaf0"/>',f'<text x="{l-10}" y="{yy+5:.2f}" text-anchor="end" font-family="Arial" font-size="13" fill="#67758a">{val:.0f}</text>']
-    step=2 if (end-start).days>2500 else 1
-    lastyear=start.year
-    for yr in range(start.year,end.year+1):
-        if (yr-start.year)%step: continue
-        d=max(start,dt.date(yr,1,1)); xx=x(d.isoformat())
-        svg.append(f'<text x="{xx:.2f}" y="{height-b+24}" text-anchor="middle" font-family="Arial" font-size="12" fill="#67758a">{yr}</text>')
-    for data,color,style in [(baseline,'#9aa6b2','5 4'),(active,'#1673b1','')]:
-        pts=' '.join(f'{x(a["日期"]):.2f},{y(float(a["总资产"])/10000):.2f}' for a in data)
-        svg.append(f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="2.3" stroke-dasharray="{style}"/>')
-    svg += [f'<text x="{width-320}" y="34" font-family="Microsoft YaHei,Arial" font-size="14" fill="#1673b1">━━ 2% 波段</text>',
-            f'<text x="{width-185}" y="34" font-family="Microsoft YaHei,Arial" font-size="14" fill="#718096">┄┄ 不做波段</text>', '</svg>']
-    (OUT/f'{period}_收益曲线.svg').write_text('\n'.join(svg),encoding='utf-8')
-
 def stats(period):
     tr=rows(f'{period}_2%_交易明细.csv'); daily=rows(f'{period}_2%_每日资产.csv')
     entry=[x for x in tr if x['类型']=='建仓买入']; cutoff=entry[-1]['日期']
@@ -61,4 +34,6 @@ def stats(period):
     print('最大回撤',round(worst*100,2),interval)
 
 if __name__=='__main__':
-    for p in ('10年','5年','1年'): curve(p); stats(p)
+    from visualize import make_all
+    for p in ('10年','5年','1年'): stats(p)
+    make_all()

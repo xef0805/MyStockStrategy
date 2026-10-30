@@ -5,16 +5,18 @@ from market import CODES, DATA, DIV, DATES, anniversary
 
 ROOT = Path(__file__).resolve().parent
 
-def run(start, threshold):
+def run(start, threshold, codes=None):
+    CODES = list(codes or ['601398', '601939'])
     days=[x for x in DATES if start<=x<='2026-10-30']
     corecash=900000.; wavecash=100000.; lots={c:[] for c in CODES}; waveqty={c:0 for c in CODES}
-    used=set(); weeks=[]; priorweek=None; pending=None
+    used=set(); entry_count=0; pending=None
     fees=taxes=dividend=0.; sales=buys=signals=skips=0; trades=[]; equity=[]; daily=[]
     def qty(c): return sum(x['qty'] for x in lots[c])
     def value(day,field): return corecash+wavecash+sum(qty(c)*DATA[c][day][field] for c in CODES)
     def fee(v,side,day): return max(5,v*.0003)+v*(.00001+((.001 if day<'2023-08-28' else .0005) if side=='sell' else 0))
     def purchase(c,day,amount,kind):
         nonlocal corecash,wavecash,fees,buys
+        if DATA[c][day]['suspended']: return False
         cash=wavecash if kind=='wave' else corecash
         budget=min(amount,cash); price=DATA[c][day]['close']
         n=math.floor(budget/price/100)*100
@@ -32,24 +34,23 @@ def run(start, threshold):
             if div:
                 for lot in lots[c]: lot['divs'].append(div)
                 d=qty(c)*div; dividend+=d; corecash+=d
-        if week!=priorweek:
-            priorweek=week
-            if len(weeks)<10: weeks.append(week)
         pending=None
-        if threshold is not None and len(weeks)>=10 and i>0:
+        if threshold is not None and entry_count>=10 and i>0:
             sig=[]
             for c in CODES:
+                if DATA[c][day]['suspended']: continue
                 prev=DATA[c][days[i-1]]['close']; ref=round(prev-DIV[c].get(day,0)+1e-8,2)
                 change=DATA[c][day]['close']/ref-1
                 if change>threshold: sig.append((abs(change),c,'sell'))
                 elif change < -threshold: sig.append((abs(change),c,'buy'))
             if sig:
                 _,c,side=max(sig); pending=(c,side); signals+=1
-        entry=week in weeks and (week,'buy') not in used
+        entry=entry_count<10 and (week,'buy') not in used
         if entry:
-            c=CODES[(len(weeks)-1)%2]
-            if purchase(c,day,90000.,'建仓'): used.add((week,'buy'))
-        elif len(weeks)>=10:
+            c=CODES[entry_count%len(CODES)]
+            if purchase(c,day,90000.,'建仓'):
+                entry_count+=1; used.add((week,'buy'))
+        elif entry_count>=10:
             if threshold is not None and pending:
                 c,side=pending
                 if (week,side) not in used:
@@ -72,10 +73,12 @@ def run(start, threshold):
                         else: skips+=1
             # 分红统一转入长期仓，使用未占用的每周买入额度，按两只长期仓市值平衡。
             if (week,'buy') not in used:
-                c=min(CODES,key=lambda x:(qty(x)-waveqty[x])*DATA[x][day]['close'])
-                if purchase(c,day,min(corecash,value(day,'close')*.05),'分红再投'): used.add((week,'buy'))
+                available=[c for c in CODES if not DATA[c][day]['suspended']]
+                if available:
+                    c=min(available,key=lambda x:(qty(x)-waveqty[x])*DATA[x][day]['close'])
+                    if purchase(c,day,min(corecash,value(day,'close')*.05),'分红再投'): used.add((week,'buy'))
         total=value(day,'close'); equity.append(total)
-        daily.append([day,round(total,2),round(corecash,2),round(wavecash,2),qty(CODES[0]),qty(CODES[1])])
+        daily.append([day,round(total,2),round(corecash,2),round(wavecash,2)]+[qty(c) for c in CODES])
     peak=equity[0]; mdd=0
     for v in equity: peak=max(peak,v); mdd=min(mdd,v/peak-1)
     n=(dt.date.fromisoformat(days[-1])-dt.date.fromisoformat(days[0])).days/365.2425

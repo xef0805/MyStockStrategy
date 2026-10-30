@@ -36,4 +36,13 @@ class BacktestTests(unittest.TestCase):
         self.assertEqual(result['sells'],0)
         self.assertEqual(result['wavecash'],100000)
 
+    def test_power_suspension_does_not_trade_and_entry_completes(self):
+        from market import DATA
+        result=run('2021-10-30',.02,['601398','600900'])
+        entries=[t for t in result['trades'] if t[1]=='建仓买入']
+        self.assertEqual(len(entries),10)
+        for day, _, code, *_ in result['trades']:
+            self.assertFalse(DATA[code][day]['suspended'])
+        self.assertTrue(DATA['600900']['2021-11-29']['suspended'])
+
 if __name__=='__main__': unittest.main()
